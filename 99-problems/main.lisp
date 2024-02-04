@@ -95,4 +95,38 @@
 (defun p-10 (ls)
   (mapcar (lambda (x)
 	    `(,(length x) ,(car x)))
-	    (p-09 ls)))
+	  (p-09 ls)))
+
+
+;; (encode '(a a a a b c c a a d e e e e)) ->
+;; ((4 A) B (2 C) (2 A) D (4 E))
+;; All single elements are simple added
+(defun p-11 (ls)
+  (mapcar (lambda (x)
+	    (let ((len (length x)))
+	      (if (= 1 len)
+		  (car x)
+		  `(,len ,(car x)))))
+	  (p-09 ls)))
+
+
+;; Given a compressed ((4 A) B (2 C) (2 A) D (4 E))
+;; return it's uncompressed version (a a a a b c c a a d e e e e))
+(defun p-12 (ls)
+  (mapcar (lambda (x)
+	    (if (atom x)
+		x
+	        (let ((ret    ())
+		      (num    (car x))
+		      (letter (car (cdr x))))
+		  (dotimes (i num)
+		    (setf ret (cons letter ret)))
+		  ret)))
+	  ls))
+
+
+
+		    
+  
+
+
