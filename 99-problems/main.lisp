@@ -93,4 +93,6 @@
 ;; (encode '(a a a a b c c a a d e e e e)) ->
 ;; ((4 A) (1 B) (2 C) (2 A) (1 D)(4 E))
 (defun p-10 (ls)
-  (labels ((
+  (mapcar (lambda (x)
+	    `(,(length x) ,(car x)))
+	    (p-09 ls)))
