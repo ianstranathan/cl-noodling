@@ -88,3 +88,9 @@
 		(cons last-list acc)))
       ;; cons last-list and reverse
       (progn (p-05 (cons last-list acc)))))
+
+
+;; (encode '(a a a a b c c a a d e e e e)) ->
+;; ((4 A) (1 B) (2 C) (2 A) (1 D)(4 E))
+(defun p-10 (ls)
+  (labels ((
