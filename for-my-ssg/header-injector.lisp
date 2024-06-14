@@ -1,74 +1,133 @@
+;; TODO
+;; * Make sure this is working, then finish html injection func
+;; * Comment everything
 
-(defparameter website-root-name "https://ianstranathan.github.io/")
-(defparameter root-path-name "c:/_work/website/pages/")
+;; (defparameter site-root-url "https://ianstranathan.github.io/")
+(defparameter site-root-url "http://localhost:8080/")
+(defparameter root-pathname #P"c:/_work/website/html/")
 
+;; ---------------------------------------------------------------------------
+;; Utils
+;; -----
+(defun index-p (pathspec)
+  (if pathspec
+      (probe-file (merge-pathnames "index.html" pathspec))))
 
-(defun index-p ( pathspec )
-  (probe-file pathspec))
-
-
-(defun all-dirs (dir-path)
-  ;; merge-pathname will truncate without trailing backslash
-  (merge-pathnames "*" dir-path))
-
+(defun all-dirs-ls (pathspec) ; -> ls
+  (directory (merge-pathnames "*" pathspec)))
 
 (defun pathname-last-dir (pathspec)
-  (let ((name (first (last (pathname-directory pathspec)))))
-    (if (string= name "pages")
-	"Main"
-	(string-capitalize name))))
+  (first (last (pathname-directory pathspec))))
 
+(defun pathname-assert (path &optional (another-path #P"c:/") (fn #'>))
+  ;; (uiop:pathname-parent-directory-pathname #P"c:/") loops forever
+  (assert (apply fn (mapcar (lambda (x) (length (namestring x))) (list path another-path)))))
 
-(defun make-pathname-into-link (a-namestring)
-  (if (string= a-namestring root-path-name)
-      website-root-name
-      (concatenate 'string website-root-name
-		   (subseq a-namestring (length root-path-name)))))
+;; ---------------------------------------------------------------------------
 
-
-(defun interleave-links-and-link-names (a-pathname) ; -> ls
-  (labels ((acc-link ( acc another-pathname)
+(defun interleave-links-and-link-names-for-header (pathspec) ; -> ls
+  "takes in a pathname and returns a list of interleaved names and links of its parent dirs"
+  (labels ((header-link-name (a-pathname)
+	     (let ((name (namestring (pathname-last-dir a-pathname))))    
+	       (if (string= name "html")
+		   "Main"
+		   (string-capitalize name))))
+	   (acc-link (acc a-pathname)
 	     ;; interleave name and link
-	     (let ((link-name (pathname-last-dir another-pathname))
-		   (link (make-pathname-into-link (namestring another-pathname))))
+	     (let ((link-name (header-link-name a-pathname))
+		   (link      (make-link-url-from-pathspec a-pathname)))
 	       (cons link (cons link-name acc))))
-	   (recur (acc curr-pathname)
-	     (if (string= (namestring curr-pathname) root-path-name)
+	   ;; --------------------
+	   (recur (acc a-pathname)
+	     (pathname-assert a-pathname)
+	     (if (eql a-pathname root-pathname)
 		 acc
-		 (let ((parent-dir (uiop:pathname-parent-directory-pathname curr-pathname)))
+		 (let ((parent-dir (uiop:pathname-parent-directory-pathname a-pathname)))
 		   (recur (acc-link acc parent-dir) parent-dir)))))
-    (recur (acc-link nil a-pathname) a-pathname)))
+    (recur (acc-link nil pathspec) pathspec)))
 
 
-(defun link-injection (pathspec)
-  (if (index-p pathspec) ; if there's an index.html
-      (let* ((file-str (uiop:read-file-string pathspec)) ; html file as a string
-	     (end   (search "</header>" file-str))       ; [0 to </header>]
-	     (start-str (subseq file-str
-				0
-				(+ (length "<header>")
-				   (search "<header>" file-str))))
-	     (end-str   (subseq file-str end)))
-	(with-open-file (stream pathspec
-			   :direction :output
-			   :if-exists :supersede)
-          (format stream "~{~a~a~a~}" `(,start-str
-				        ,(format nil
-						"~{ <a href=\"~a\">~a</a> ::~}"
-						(interleave-links-and-link-names
-						 (uiop:pathname-parent-directory-pathname pathspec)))
-					,end-str))))))
+(defun html-injection (pathspec &optional (page-p nil)) ; -> void
+  ;; stack variables are just a way I'm cutting up an html file as a string
+  ;; it's probably better to be building up component wise, rather than cutting down
+  ;; but I'm using org mode and it's enough for what I want
+  (let* ((file-str   (uiop:read-file-string pathspec)))
+    (file-str)))
+	 
+	 ;; (header     (format nil "<header>~{ <a href=\"~a\">~a</a> ::~}</header>"
+	 ;; 		     (interleave-links-and-link-names-for-header
+	 ;; 		      (uiop:pathname-parent-directory-pathname pathspec))))
+	 ;; (start-2-header      (subseq file-str 0 (search "<header>" file-str)))
+	 ;; (end-of-header-2-end (subseq file-str (search "</header>" file-str :from-end t)))
+	 
+	 ;; ;; superposition logic here to avoid loading file more than once on a page with links
+	 
+	 ;; (content-end-index (if page-p
+	 ;; 			;; need to offset to not include </div> at beg of main seq
+	 ;; 			(search "</div>" end-of-header-2-end :start2 1)))
+	 ;; (rest-with-content (if content-end-index
+	 ;; 			(format nil "~{~a~}" (list (subseq end-of-header-2-end 0 content-end-index)
+	 ;; 						   (generate-page-links-html pathspec)
+	 ;; 						   (subseq end-of-header-2-end content-end-index )))
+	 ;; 			end-of-header-2-end)))
+    ;; (with-open-file (stream pathspec
+    ;; 			    :direction :output
+    ;; 			    :if-exists :supersede)
+    ;; (format t "~{~a~}" (list start-2-header header rest-with-content))))
 
 
-(defun walk-pages-dir ()
-  (labels ((recur (ls-dirs)
-	     (mapcar (lambda (dir-pathname)
-		       (let (( subdirs (directory (all-dirs dir-pathname))))
-			 (if subdirs
-			     ;; if there is a directory keep recursing
-			     (progn (print subdirs)
-				    (recur subdirs))
-			     ;; otherwise do stuff to the html file	     
-			     (link-injection (merge-pathnames "index.html" dir-pathname)))))
-		     ls-dirs)))
-    (recur (directory (all-dirs root-path-name)))))
+(defun finish-website()
+  ;; runs through all directories in root directory
+  ;; injects header and page links if it's a page (index.html exists && subdirs exist)
+  (let ((pathnames ()))
+    (labels ((walk (dir)
+	       (cond
+		 ((null dir))
+		 ((atom dir)
+		  (push dir pathnames) ;; debug collection
+		  (let ((subdirs (all-dirs-ls dir)))
+		    (if subdirs
+			(html-injection dir t)
+			(html-injection dir))
+		    (walk (all-dirs-ls dir))))
+		 (t (walk (car dir))
+		    (walk (cdr dir))))))
+      (walk root-pathname))
+    (nreverse pathnames)))
+
+
+(defun make-link-url-from-pathspec (pathspec)
+  (if (eql pathspec root-pathname)
+      site-root-url
+      (format nil "~a~a"
+	      site-root-url
+	      (subseq (namestring pathspec) ; offset into pathname by root url
+		      (length (namestring root-pathname)))))))
+
+
+(defun generate-page-links-html (pathspec)
+  (page-content-str (all-dirs-ls pathspec)))
+
+
+(defun page-content-str (pathspec)
+  (let ((html-str ()))
+    (labels ((template-str (path)
+	       (if (index-p path)
+		   (format nil "<a href=\"~a\">~a</a>~C"
+			   (make-link-url-from-pathspec path)
+			   (pathname-last-dir path)
+			   #\Newline)
+		   (format nil "<p>~a</p>~C"
+			   (pathname-last-dir path)
+			   #\Newline)))
+	     (walk (dir)
+	       (cond
+		 ((null dir))
+		 ((atom dir)
+		  (push (template-str dir) html-str)
+		  (walk (all-dirs-ls dir)))
+		 (t (walk (car dir))
+		    (walk (cdr dir))))))
+      (walk pathspec))
+    (apply #'concatenate 'string (nreverse html-str))))
+

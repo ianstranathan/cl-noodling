@@ -16,3 +16,19 @@
                    (recur (cons (subseq str curr-index next-index) ls) (1+ next-index))
 		   (nreverse (cons (subseq str curr-index) ls))))))
     (recur nil 0)))
+
+(defun collect-leaves ( tree )
+  (let ((leaves ()))
+    (labels ((walk (tree)
+	       (cond
+		 ((null tree))
+		 ((atom tree)
+		  (push tree leaves))
+		 (t (walk (car tree))
+		    (walk (cdr tree))))))
+      (walk tree))
+    (nreverse leaves)))
+
+(defun pathname-assert (path &optional (another-path #P"c:/"))
+  ;; (uiop:pathname-parent-directory-pathname #P"c:/") loops forever
+  (assert (apply #'> (mapcar (lambda (x) (length (namestring x))) (list path another-path)))))
