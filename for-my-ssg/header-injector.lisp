@@ -1,6 +1,3 @@
-;; TODO
-;; * Make sure this is working, then finish html injection func
-;; * Comment everything
 
 ;; (defparameter site-root-url "https://ianstranathan.github.io/")
 (defparameter site-root-url "http://localhost:8080/")
@@ -22,6 +19,18 @@
 (defun pathname-assert (path &optional (another-path #P"c:/") (fn #'>))
   ;; (uiop:pathname-parent-directory-pathname #P"c:/") loops forever
   (assert (apply fn (mapcar (lambda (x) (length (namestring x))) (list path another-path)))))
+
+(defun make-link-url-from-pathspec (pathspec)
+  (if (eql pathspec root-pathname)
+      site-root-url
+      (format nil "~a~a"
+	      site-root-url
+	      (subseq (namestring pathspec) ; offset into pathname by root url
+		      (length (namestring root-pathname))))))
+
+(defun remove-file-from-path-pathname (file-pathspec)
+  (make-pathname :directory (pathname-directory file-pathspec)
+		 :name nil :type nil))
 
 ;; ---------------------------------------------------------------------------
 
@@ -47,33 +56,32 @@
     (recur (acc-link nil pathspec) pathspec)))
 
 
-(defun html-injection (pathspec &optional (page-p nil)) ; -> void
-  ;; stack variables are just a way I'm cutting up an html file as a string
-  ;; it's probably better to be building up component wise, rather than cutting down
-  ;; but I'm using org mode and it's enough for what I want
-  (let* ((file-str   (uiop:read-file-string pathspec)))
-    (file-str)))
+(defun html-injection (file &optional (pathspec nil))
+  
+  ;; ;; stack variables are just a way I'm cutting up an html file as a string
+  ;; ;; it's probably better to be building up component wise, rather than cutting down
+  ;; ;; but I'm using org mode and it's enough for what I want
+  (let* ((file-str   (uiop:read-file-string file))
+	 (header     (format nil "<header>~{ <a href=\"~a\">~a</a> ::~}</header>"
+			     (interleave-links-and-link-names-for-header
+			      (uiop:pathname-parent-directory-pathname file))))
+    
+	 (start-2-header      (subseq file-str 0 (search "<header>" file-str)))
+	 (end-of-header-2-end (subseq file-str (search "</header>" file-str :from-end t)))
 	 
-	 ;; (header     (format nil "<header>~{ <a href=\"~a\">~a</a> ::~}</header>"
-	 ;; 		     (interleave-links-and-link-names-for-header
-	 ;; 		      (uiop:pathname-parent-directory-pathname pathspec))))
-	 ;; (start-2-header      (subseq file-str 0 (search "<header>" file-str)))
-	 ;; (end-of-header-2-end (subseq file-str (search "</header>" file-str :from-end t)))
-	 
-	 ;; ;; superposition logic here to avoid loading file more than once on a page with links
-	 
-	 ;; (content-end-index (if page-p
-	 ;; 			;; need to offset to not include </div> at beg of main seq
-	 ;; 			(search "</div>" end-of-header-2-end :start2 1)))
-	 ;; (rest-with-content (if content-end-index
-	 ;; 			(format nil "~{~a~}" (list (subseq end-of-header-2-end 0 content-end-index)
-	 ;; 						   (generate-page-links-html pathspec)
-	 ;; 						   (subseq end-of-header-2-end content-end-index )))
-	 ;; 			end-of-header-2-end)))
-    ;; (with-open-file (stream pathspec
-    ;; 			    :direction :output
-    ;; 			    :if-exists :supersede)
-    ;; (format t "~{~a~}" (list start-2-header header rest-with-content))))
+	 ;; superposition logic here to avoid loading file more than once on a page with links
+	 (content-end-index (if pathspec
+				;; need to offset to not include </div> at beg of main seq
+				(search "</div>" end-of-header-2-end :start2 1)))
+	 (rest-with-content (if content-end-index
+				(format nil "~{~a~}" (list (subseq end-of-header-2-end 0 content-end-index)
+							   (page-content-str pathspec)
+							   (subseq end-of-header-2-end content-end-index )))
+				end-of-header-2-end)))
+    (with-open-file (stream file
+			    :direction :output
+			    :if-exists :supersede)
+      (format stream "~{~a~}" (list start-2-header header rest-with-content)))))
 
 
 (defun finish-website()
@@ -85,29 +93,23 @@
 		 ((null dir))
 		 ((atom dir)
 		  (push dir pathnames) ;; debug collection
-		  (let ((subdirs (all-dirs-ls dir)))
-		    (if subdirs
-			(html-injection dir t)
-			(html-injection dir))
-		    (walk (all-dirs-ls dir))))
+		  (let ((subdirs (all-dirs-ls dir))
+			(index-file (index-p dir)))
+		    (if (eql dir root-pathname)
+			(walk subdirs))
+		    (if index-file
+			(if subdirs
+			    (html-injection index-file dir) ;; page injection & header
+			    (html-injection index-file)))     ;; header
+		    (walk subdirs)))
 		 (t (walk (car dir))
 		    (walk (cdr dir))))))
       (walk root-pathname))
     (nreverse pathnames)))
 
-
-(defun make-link-url-from-pathspec (pathspec)
-  (if (eql pathspec root-pathname)
-      site-root-url
-      (format nil "~a~a"
-	      site-root-url
-	      (subseq (namestring pathspec) ; offset into pathname by root url
-		      (length (namestring root-pathname)))))))
-
-
-(defun generate-page-links-html (pathspec)
-  (page-content-str (all-dirs-ls pathspec)))
-
+(defun remove-file-from-path-pathname (file-pathspec)
+  (make-pathname :directory (pathname-directory file-pathspec)
+		 :name nil :type nil))
 
 (defun page-content-str (pathspec)
   (let ((html-str ()))
