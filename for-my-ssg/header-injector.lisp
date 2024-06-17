@@ -1,3 +1,8 @@
+;; TODO
+;; * Make sure this is working, then finish html injection func
+;; ** There was an incorrect assumption about (directory path) behavior
+;; ** namely, it doesn't return nil if there is a file in path
+;; * Comment everything
 
 ;; (defparameter site-root-url "https://ianstranathan.github.io/")
 (defparameter site-root-url "http://localhost:8080/")
@@ -23,17 +28,17 @@
 (defun make-link-url-from-pathspec (pathspec)
   (if (eql pathspec root-pathname)
       site-root-url
-      (format nil "~a~a"
+      (format nil "~a~a~a"
 	      site-root-url
+	      "/html/"
 	      (subseq (namestring pathspec) ; offset into pathname by root url
 		      (length (namestring root-pathname))))))
-
+7
 (defun remove-file-from-path-pathname (file-pathspec)
   (make-pathname :directory (pathname-directory file-pathspec)
 		 :name nil :type nil))
 
 ;; ---------------------------------------------------------------------------
-
 (defun interleave-links-and-link-names-for-header (pathspec) ; -> ls
   "takes in a pathname and returns a list of interleaved names and links of its parent dirs"
   (labels ((header-link-name (a-pathname)
@@ -57,7 +62,6 @@
 
 
 (defun html-injection (file &optional (pathspec nil))
-  
   ;; ;; stack variables are just a way I'm cutting up an html file as a string
   ;; ;; it's probably better to be building up component wise, rather than cutting down
   ;; ;; but I'm using org mode and it's enough for what I want
@@ -68,20 +72,31 @@
     
 	 (start-2-header      (subseq file-str 0 (search "<header>" file-str)))
 	 (end-of-header-2-end (subseq file-str (search "</header>" file-str :from-end t)))
-	 
-	 ;; superposition logic here to avoid loading file more than once on a page with links
-	 (content-end-index (if pathspec
-				;; need to offset to not include </div> at beg of main seq
-				(search "</div>" end-of-header-2-end :start2 1)))
-	 (rest-with-content (if content-end-index
-				(format nil "~{~a~}" (list (subseq end-of-header-2-end 0 content-end-index)
-							   (page-content-str pathspec)
-							   (subseq end-of-header-2-end content-end-index )))
-				end-of-header-2-end)))
-    (with-open-file (stream file
+
+	 (write-fn (lambda (str-ls)
+		     (with-open-file (stream file
 			    :direction :output
 			    :if-exists :supersede)
-      (format stream "~{~a~}" (list start-2-header header rest-with-content)))))
+		       (format stream "~{~a~}" str-ls)))))
+    ;; page injection
+    (when pathspec
+	(let* ((start-content-index   (search "<div id=\"content\"" end-of-header-2-end))
+	       (closing-content-index (+ (length "</div>")
+					 (search "</div>" end-of-header-2-end :start2 start-content-index)))
+	       (existing-content (subseq end-of-header-2-end
+					 (search "<p>" end-of-header-2-end  :start2 start-content-index)
+					 (+ (length "</p>")
+					    (search "</p>" end-of-header-2-end :start2 start-content-index))))
+	       (content (format nil "<div id=\"content\" class=\"content\">~a~C~a</div>"
+				existing-content #\Newline (page-content-str pathspec))))
+	  (funcall write-fn (list start-2-header
+				  header
+				  "</div>" ;; should probably keep it systematic and get index from end of header to start-content-index
+				  content
+				  (subseq end-of-header-2-end closing-content-index)))))
+    (unless pathspec
+      (funcall write-fn (list start-2-header header end-of-header-2-end)))))
+
 
 
 (defun finish-website()
@@ -95,12 +110,11 @@
 		  (push dir pathnames) ;; debug collection
 		  (let ((subdirs (all-dirs-ls dir))
 			(index-file (index-p dir)))
-		    (if (eql dir root-pathname)
-			(walk subdirs))
-		    (if index-file
-			(if subdirs
-			    (html-injection index-file dir) ;; page injection & header
-			    (html-injection index-file)))     ;; header
+		    (if (not (eql dir root-pathname))
+			(if index-file
+			    (if subdirs
+				(html-injection index-file dir) ;; page injection & header
+				(html-injection index-file))))  ;; header
 		    (walk subdirs)))
 		 (t (walk (car dir))
 		    (walk (cdr dir))))))
@@ -119,7 +133,7 @@
 			   (make-link-url-from-pathspec path)
 			   (pathname-last-dir path)
 			   #\Newline)
-		   (format nil "<p>~a</p>~C"
+		   (format nil "<span>~a</span>~C"
 			   (pathname-last-dir path)
 			   #\Newline)))
 	     (walk (dir)
@@ -130,6 +144,7 @@
 		  (walk (all-dirs-ls dir)))
 		 (t (walk (car dir))
 		    (walk (cdr dir))))))
-      (walk pathspec))
+      ;; we don't want the original pathspec -> all-dirs-ls
+      (walk (all-dirs-ls pathspec)))
+    ;; turn it all into one big string
     (apply #'concatenate 'string (nreverse html-str))))
-
